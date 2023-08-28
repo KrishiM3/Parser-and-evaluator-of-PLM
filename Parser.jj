@@ -1,0 +1,593 @@
+options{
+LOOKAHEAD =2;
+FORCE_LA_CHECK=true;
+}
+PARSER_BEGIN(Assignment)
+import java.util.*;
+public class Assignment{
+  //counts how many MAIN functions are in the input 
+  static int mainCount = 0;
+  static int lineNumber = 1;
+  //Stores all Functions ,parameter name and their Body's
+  static HashMap<String,ArrayList<String>> functions = new HashMap<String,ArrayList<String>>(); 
+  //stores all the functions that are called by other functions and the line number which they are called on
+  static HashMap<String,Integer> calledFuncs = new HashMap<String,Integer>();
+  static Stack<String> callstack = new Stack<String>(); 
+  public static void main(String args []) throws ParseException, TokenMgrError, NumberFormatException,ErrorHandler{
+     {
+      Assignment parser = new Assignment(System.in);
+      try{
+        parser.Start();
+      }catch (TokenMgrError e){
+        System.out.println("FAIL");
+        System.err.println(lineNumber);
+        System.err.println("Character is not part of the specific ASCII allowed");
+      }catch (ErrorHandler e){
+        System.out.println("FAIL");
+        System.err.println(lineNumber);
+        System.err.println(e.getMessage());
+      }
+      
+    }
+  }
+  
+  /**
+   * the checker which checks whether or not there is 1 main function
+   */ 
+  public static void MainCheck() throws ErrorHandler{
+    if (mainCount == 1)
+      System.out.println("PASS");
+    else if (mainCount == 0){
+      lineNumber = 0;
+      throw new ErrorHandler("Main Function Missing");
+    } else{
+      throw new ErrorHandler("More than 1 Main Function");
+    }
+  }
+  /**
+   * helper function to construct the strings representing function bodies either token or string is empty.
+   * @param t token given in
+   * @param temp temporary string 
+   * @param body the string which we wish to append to
+   * @return the new string with the correct token/function call string appended to it 
+   */
+  public static String Construct(Token t, String temp, String body){
+    if (temp.isEmpty()){
+      return (body += t.image);
+    }else{
+      return (body += temp);
+    }
+  }  
+
+  /**
+   * This is the function which starts the evaluation, this is responsible for reading the body of the main function
+   * in our PLM and obtianing a calculated value 
+   * @return correctly calculated value from main's function body
+   */
+  public static int EvalMain(){
+    String body = functions.get("MAIN").get(1);
+    String expression = ""; // this expression is used to hold our string after all the parsing, this should be an arithmetic expression made up of numbers, * and +
+    
+    //iterate through the main body
+    for (int i=0; i<body.length(); i++){
+      if (Character.isDigit(body.charAt(i)) || body.charAt(i) == '*' || body.charAt(i) == '+'){
+        expression+=body.charAt(i);
+      }else{
+        //this means in the main body there is a function call which requires to be processed first
+        //thus we must obtain the name of the function being called and the parameter inside
+        String called_name = "";
+        String called_param = "";
+        char currChar = body.charAt(i);
+        while (currChar != '('){
+          called_name+= currChar;
+          i++;
+          currChar = body.charAt(i);
+        }
+        i++;
+        currChar = body.charAt(i);
+        //counts how many open brackets there are , necessary so we can compute function calls inside function calls, such as XX(YY(ZZ(1)))
+        int opencount = 0;
+
+        while ((currChar != ')') || (opencount != 0)){
+          if (currChar == '('){
+            opencount++;
+          }
+          if (currChar == ')'){
+            opencount--;
+          }
+          called_param+=currChar;
+          i++;
+          currChar = body.charAt(i);
+        }
+        //we then call this function to evaluate the function call. 
+        expression+=Evaluate(called_name,called_param);
+
+      }
+    }
+    return calculate(expression);
+  }
+
+
+
+  //this function is responsible for computing our value,
+  //it takes the function name which has been referenced and the body of that call, i.e. XX(27) name would be XX and param is 27
+  /**
+   * this recursive function is responsible for obtaining our called functions in a computable form i.e. turning XX(YY(1)) -> "x+22",
+   * this function returns a calculated value of the arithmetic expression created as a result of the called function
+   * @param name the name of the called function i.e. XX(27) name would be XX
+   * @param parameter parameter of the called function i.e. XX(27) parameter is 27
+   * @return integer value of the function call
+   */
+  public static int Evaluate(String name, String parameter){
+    /*
+    
+    possible cases:
+    parameter is a function i.e. XX(YY(20)), param would be YY(20) in this case we recursively evaluate until we obtain an integer then evaluate XX
+    parameter is a computeable sequence i.e XX(7 * 2), then we compute this param and then evaluate function XX
+    A mix: XX(YY(20)+5) then we iterate through this parameter, identify a function call, compute the function and 
+    continue iterating along the body until the end adding it to a string which we can then compute
+
+    We must also be careful with parameters ensuring that they are defined as a part of the function correctly
+    */
+
+    String function_param = functions.get(name).get(0); // the string which is the parameter defined in the function
+    String function_body = functions.get(name).get(1); // the body of the function
+
+
+    //we iterate through the inputted parameter ensuring its computable
+    //now if it is a number or an arithmetic operator we can simply add it to the string
+    //it is not possible for it to be a lowercase word due to recursion, this is handled when interpreting the function body
+    //therefore if its not the first line then it must be another function call, thus we obtain the name of the 
+    //function, the body of the call and recursively call this function
+    
+    
+    String proper_parameter = ""; //the parameter as a computable arithmetic expression consisting of numbers, * and +
+
+    //iterate through the parameter in the function call
+    for (int i=0; i<parameter.length(); i++){
+      if (Character.isDigit(parameter.charAt(i)) || parameter.charAt(i) == '*' || parameter.charAt(i) == '+'){
+        proper_parameter += parameter.charAt(i);
+      }else{
+        //a function call inside the parameter is discovered which must be computed first
+        String called_name = "";
+        String called_param = "";
+        char currChar = parameter.charAt(i);
+        while (currChar != '('){
+          called_name+= currChar;
+          i++;
+          currChar = parameter.charAt(i);
+        }
+        i++;
+        currChar = parameter.charAt(i);
+        int opencount = 0;
+        while ((currChar != ')') || (opencount != 0)){
+          if (currChar == '('){
+            opencount++;
+          }
+          if (currChar == ')'){
+            opencount--;
+          }
+          called_param+=currChar;
+          i++;
+          currChar = parameter.charAt(i);
+        }
+        if (called_name.equals(""))
+          ;
+        else
+          proper_parameter+=Evaluate(called_name,called_param);
+
+      }
+    }
+    //now that the parameter is in a computable arithmetic expression form we calculate it to give an integer 
+    int new_parameter = calculate(proper_parameter);
+
+    //now we need to iterate through the actual body of the function, and do the same thing as above, except,
+    //an additional case arises where lowercase letters can now be valid as it could be part of the expression
+
+    //first we check if any looping occurs as if the function called is already in our call stack we know we have a loop
+    if (callstack.search(name) != -1){
+      System.out.println("DIVERGENCE");
+      System.exit(0);
+    }
+    //if no loop occurs add the function to our call stack
+    callstack.push(name);
+
+    String expression = "";
+    for (int j=0; j<function_body.length(); j++){
+      if(Character.isDigit(function_body.charAt(j)) || function_body.charAt(j) == '*' || function_body.charAt(j) == '+'){
+        expression += function_body.charAt(j);
+      }else if(Character.isLowerCase(function_body.charAt(j))){
+        //this means the function uses a parameter string, which we must identify and replace with our new_parameter
+        String paramcheck = ""; // string to check our parameter is the same one which is defined in the function
+        char currChar = function_body.charAt(j);
+        paramcheck += currChar;
+        //keep on obtaining lowercase characters until there are no more adding them all to paramcheck
+        while ((Character.isLowerCase(currChar) && (j+1 != function_body.length()))){
+          j++;
+          currChar = function_body.charAt(j);
+          if (Character.isLowerCase(currChar)){
+            paramcheck += currChar;
+          }else{
+            break;
+          }
+          
+        }
+        //check if they the lowercase string is equal to the parameter defined in the function
+        if (paramcheck.equals(function_param)){
+          expression+=new_parameter; //add a copy of the new parameter calculated 
+          if (j+1 != function_body.length()){
+            expression+=currChar;
+          }else{
+            
+          }
+          
+        }else{
+          System.out.println("FAIL");
+          System.out.println("lowercase letters used are not the parameter");
+        }
+      }else{
+        //otherwise it is another function call
+        String called_func_name = "";
+        String called_func_param = "";
+        char currChar = function_body.charAt(j);
+        while (currChar != '('){
+          called_func_name+= currChar;
+          j++;
+          currChar = function_body.charAt(j);
+        }
+        j++;
+        int opencount = 0;
+        currChar = function_body.charAt(j);
+        while ((currChar != ')') ||(opencount != 0)){
+          // we must also check if there are lowercase letters inside the parameter of the function call which we can then replace with the true integer
+          if (Character.isLowerCase(currChar)){
+            String checkParam = "";
+            checkParam+= currChar;
+            while ((Character.isLowerCase(currChar) && (j+1 != function_body.length()))){
+              j++;
+              currChar = function_body.charAt(j);
+              if (Character.isLowerCase(currChar)){
+                checkParam+= currChar;
+              }else{
+                break;
+              }
+              
+            }
+            if (checkParam.equals(function_param)){
+              called_func_param+=new_parameter;
+            }else{
+              System.out.println("FAIL");
+              System.out.println("Parameter is not recognised");
+            }
+          }else{
+            if (currChar == '('){
+            opencount++;
+            }
+            if (currChar == ')'){
+              opencount--;
+            }
+            called_func_param+=currChar;
+            j++;
+            currChar = function_body.charAt(j);
+          }
+
+
+
+          
+        }
+        expression+=Evaluate(called_func_name,called_func_param);
+      }
+    }
+    callstack.pop(); //  pop the stack removing the call to the function as it has been calculated
+    return calculate(expression);
+
+
+
+
+  }
+    /**
+     * function responsible for converting a arithmetic expression string to an integer 
+     * the expression must be made up of integers, addition and multiplication 
+     * this function also treats multiplication with a precedence higher than addition
+     * 
+     * @param expression arithmetic expression string
+     * @return integer value of the expression calculated
+     */
+    public static int calculate(String expression) {
+        Stack<Character> operatorStack = new Stack<>();
+        Stack<Integer> valueStack = new Stack<>();
+
+        //iterate through the expression provided
+        for (int i = 0; i < expression.length(); i++) {
+            char ch = expression.charAt(i);
+            if (Character.isDigit(ch)) {
+                int value = ch - '0'; //converts our ASCII character to an integer
+
+                //constructs our number if it is greater than 1 digit
+                while (i + 1 < expression.length() && Character.isDigit(expression.charAt(i + 1))) {
+                    value = value * 10 + (expression.charAt(i + 1) - '0');
+                    i++;
+                }
+                valueStack.push(value); //append to our value stack 
+            } else if (ch == '*' || ch == '+') {
+                while (!operatorStack.isEmpty() && hasHigherPrecedence(ch, operatorStack.peek())) {
+                    evaluate(valueStack, operatorStack.pop());
+                }
+                operatorStack.push(ch);
+            } else {
+              // do nothing
+                ;
+            }
+        }
+
+        //keep on calling evaluate, until we have 1 value in our stack, i.e. no more operators.
+        while (!operatorStack.isEmpty()) {
+            evaluate(valueStack, operatorStack.pop());
+        }
+
+        return valueStack.pop();
+    }
+
+    /**
+     * Helper function responsible for checking if the second parameter has a higher precedence than the first
+     * @param op1 first arithmetic operator 
+     * @param op2 second arithmetic operator 
+     * @return a boolean value whether the second parameter has a higher precedence or not
+     */
+    public static boolean hasHigherPrecedence(char op1, char op2) {
+        if (op2 == '(' || op2 == ')') {
+            return false;
+        } else if (op1 == '*' && op2 == '+') {
+            return false;
+        } else {
+            return true;
+        }
+    }
+
+    /**
+     * Helper function which performs the arithmetic operations on our operands and appends the result back onto the stack
+     * @param valueStack a stack which contians all our operands 
+     * @param operator the operation required to be conducted on the next two elements in our stack 
+     */
+    public static void evaluate(Stack<Integer> valueStack, char operator) {
+        int operand2 = valueStack.pop();
+        int operand1 = valueStack.pop();
+        int result;
+        if (operator == '*') {
+            result = operand1 * operand2;
+        } else {
+            result = operand1 + operand2;
+        }
+        valueStack.push(result);
+    }
+
+    /**
+     * Function which checks if all functions which are called exist 
+     * if one does not exist we throw an error
+     * this function uses the global hashmap which contains all the called functions and the line number 
+     * this is defined earlier in the code 
+     */
+    public static void CheckCalledFuncs() throws ErrorHandler{
+      //iterate through the hashmap
+      for (Map.Entry<String, Integer> set : calledFuncs.entrySet()){
+        if (set.getKey().equals("MAIN")){
+          lineNumber = set.getValue();
+          throw new ErrorHandler("Main Function cannot be called");
+        }else if (functions.containsKey(set.getKey())){
+          //do nothing as this is okay, the function is defined which has been called
+          ;
+        }
+        else{
+          //otherwise the function called has not been defined
+          lineNumber = set.getValue();
+          throw new ErrorHandler("Function " + set.getKey() + " is not defined");
+        }
+      }
+    }
+      
+}
+//custom error which allows us to correctly format errors as desired by the spec
+class ErrorHandler extends Exception {
+
+      public ErrorHandler() {
+        super();
+      }
+
+      public ErrorHandler(String error) {
+        super(error);
+      }
+}
+
+
+PARSER_END(Assignment)
+
+
+
+
+//// DEFINE TOKENS ////
+TOKEN: {<DEF: "DEF">}
+TOKEN: {<MAIN: "MAIN">}
+
+//MUST GO FIRST AS OTHERWISE THE STRING WILL BE MATCHED TO NAME INSTEAD OF FUNCBEGINNING
+TOKEN: {<FUNCTION_BEGINNING: (["A" - "Z"])+ "(" >}
+TOKEN: {< FUNCTION_END: ")" >}
+
+
+TOKEN: {<NAME: (["A"-"Z"])+>} 
+TOKEN: {<PARAMETER: (["a" - "z"])+>}
+TOKEN: {<LBRACE: "{">}
+TOKEN: {<RBRACE: "}">}
+TOKEN: {<SEMICOLON: ";">}
+TOKEN: {<SPACE: " ">}
+TOKEN: {<EOL: "\n">}
+TOKEN: {<ADDITION: "+">}
+TOKEN: {<MULTIPLICATION: "*">}
+//// Utility ////
+TOKEN: {<NUMBER: (["0"-"9"])+>}
+TOKEN: {<BRACKET: "(">} // necessary as we do not want any brackets to be places where we dont want it to be, e.g. func body by itself 
+
+
+
+void Start() throws NumberFormatException, ErrorHandler :
+{
+
+  //variables here
+
+}
+{
+  //our grammar
+  //all tokens with a long OR are necessary to ensure everything inputted gets matched and if its not the desired matching we can throw an error
+  (
+    (<DEF> |(<NAME> | <PARAMETER> | <LBRACE> | <RBRACE> | <SEMICOLON> | <SPACE> | <EOL> | <ADDITION> | <MULTIPLICATION> | <NUMBER> | <MAIN> | <FUNCTION_BEGINNING> | <FUNCTION_END> | <BRACKET> ){throw new ErrorHandler("Function does not start with the singular string DEF.");})
+    (<SPACE> | (<NAME> | <PARAMETER> | <LBRACE> | <RBRACE> | <SEMICOLON> | <DEF> | <EOL> | <ADDITION> | <MULTIPLICATION> | <NUMBER> | <MAIN> | <FUNCTION_BEGINNING> | <FUNCTION_END> | <BRACKET>  ){throw new ErrorHandler("Missing space after DEF");})
+    (
+    DefineFunc() 
+    | 
+    CountMain() 
+    )
+
+    (<SPACE>| (<DEF> | <MAIN> | <FUNCTION_BEGINNING> | <FUNCTION_END> | <NAME> | <PARAMETER> | <RBRACE> | <SEMICOLON> | <LBRACE> | <EOL> | <ADDITION> | <MULTIPLICATION> | <NUMBER> | <BRACKET>){throw new ErrorHandler("Missing Whitespace after function body");})
+    (<RBRACE> | (<DEF> | <MAIN> | <FUNCTION_BEGINNING> | <FUNCTION_END> | <NAME> | <PARAMETER> | <LBRACE> | <SEMICOLON> | <SPACE> | <EOL> | <ADDITION> | <MULTIPLICATION> | <NUMBER> | <BRACKET>){throw new ErrorHandler("Unexpected character in place of Right brace."); })
+    (<SPACE>| (<DEF> | <MAIN> | <FUNCTION_BEGINNING> | <FUNCTION_END> | <NAME> | <PARAMETER> | <RBRACE> | <SEMICOLON> | <LBRACE> | <EOL> | <ADDITION> | <MULTIPLICATION> | <NUMBER> | <BRACKET>){throw new ErrorHandler("Missing Whitespace after Right brace");})
+    (<SEMICOLON> | (<DEF> | <MAIN> | <FUNCTION_BEGINNING> | <FUNCTION_END> | <NAME> | <PARAMETER> | <LBRACE> | <RBRACE> | <SPACE> | <EOL> | <ADDITION> | <MULTIPLICATION> | <NUMBER> | <BRACKET>){throw new ErrorHandler("Function is missing a semicolon.");})
+    (<EOL> | (<DEF> | <MAIN> | <FUNCTION_BEGINNING> | <FUNCTION_END> | <NAME> | <PARAMETER> | <LBRACE> | <RBRACE> | <SPACE> | <SEMICOLON> | <ADDITION> | <MULTIPLICATION> | <NUMBER> | <BRACKET>){throw new ErrorHandler("Function does not end in a EOL character");})
+    {lineNumber++;}
+  )*
+  (<EOF> | {throw new ErrorHandler("File should end in an EOF");})
+  {CheckCalledFuncs();}
+  {MainCheck();}
+  {System.out.println(EvalMain());}
+}
+
+/**
+ * Function which replaces the name , space ,parameter ,space sequence in our grammar
+ * this defines the function with name and parameter name 
+ */
+void DefineFunc() throws NumberFormatException, ErrorHandler :
+{
+  Token t;
+  String name;
+  String param;
+}
+{
+  (
+  (t=<NAME> | {throw new ErrorHandler("Function does not have a valid name");} )//(<PARAMETER> | <LBRACE> | <RBRACE> | <SEMICOLON> | <SPACE> | <EOL> | <ADDITION> | <MULTIPLICATION> | <NUMBER> | <DEF> | <FUNCTION_BEGINNING> | <FUNCTION_END> | <BRACKET>){throw new ErrorHandler("Function does not have a valid name");})
+  (<SPACE> | (<PARAMETER> | <LBRACE> | <RBRACE> | <SEMICOLON> | <EOL> | <ADDITION> | <MULTIPLICATION> | <NUMBER> | <DEF> | <FUNCTION_BEGINNING> | <FUNCTION_END> | <BRACKET>){throw new ErrorHandler("Function does not have a valid name");})
+  {
+    name = t.image;
+    //check if the function already exists
+    if (functions.containsKey(name)){
+      throw new ErrorHandler("Function " + name + "  already exists");
+    }
+  }
+  (t=<PARAMETER> | (<MAIN> | <NAME> | <LBRACE> | <RBRACE> | <SEMICOLON> | <SPACE> | <EOL> | <ADDITION> | <MULTIPLICATION> | <NUMBER> | <DEF> | <FUNCTION_BEGINNING> | <FUNCTION_END> | <BRACKET>){throw new ErrorHandler("Function does not have a valid parameter name");})
+  (<SPACE> |  (<MAIN> | <NAME> | <LBRACE> | <RBRACE> | <SEMICOLON> | <EOL> | <ADDITION> | <MULTIPLICATION> | <NUMBER> | <DEF> | <FUNCTION_BEGINNING> | <FUNCTION_END> | <BRACKET>){throw new ErrorHandler("Function does not have a valid parameter name");})
+  {param = t.image;}
+  BodyInterpretation(name,param)
+  )
+}
+
+/**
+ * function which replaces the main, space sequence of our grammar
+ * this tracks if a main is called in this fucntion
+ */
+void CountMain() throws NumberFormatException, ErrorHandler :
+{}
+{
+  (
+    <MAIN>
+    {
+      if (functions.containsKey("MAIN")){
+        throw new ErrorHandler("MAIN function already defined");
+      }
+    }
+    (<SPACE> | (<NAME> | <PARAMETER>  | <RBRACE> | <SEMICOLON> | <EOL> | <ADDITION> | <MULTIPLICATION> | <NUMBER> | <DEF> | <BRACKET>){throw new ErrorHandler("There should only be a space after main followed by a left brace");} | <LBRACE>{throw new ErrorHandler("Missing space between main and left brace");})
+    {mainCount++;}
+    BodyInterpretation("MAIN", null)
+  )
+}
+
+/**
+ * Function to replace the body of all our functions, including braces in our Grammar
+ * This function also constructs our functions hashmap as it parses. 
+ * @param name name of the function being defined
+ * @param param the parameter definition of the function being defined
+ * 
+ */
+void BodyInterpretation(String name, String param) throws NumberFormatException, ErrorHandler :
+{
+  Token t = null;
+  String body = "";
+  String temp = "";
+}
+{
+  (<LBRACE> | (<DEF> | <MAIN> | <FUNCTION_BEGINNING> | <FUNCTION_END> | <NAME> | <PARAMETER> | <RBRACE> | <SEMICOLON> | <SPACE> | <EOL> | <ADDITION> | <MULTIPLICATION> | <NUMBER> | <BRACKET>){throw new ErrorHandler("Unexpected character in place of Left brace."); })
+  (<SPACE>| (<DEF> | <MAIN> | <FUNCTION_BEGINNING> | <FUNCTION_END> | <NAME> | <PARAMETER> | <RBRACE> | <SEMICOLON> | <LBRACE> | <EOL> | <ADDITION> | <MULTIPLICATION> | <NUMBER> | <BRACKET>){throw new ErrorHandler("Missing Whitespace after left brace");})
+  (t=<NUMBER> | temp=Helper(param) | t=checkParam(param) | <SPACE>{throw new ErrorHandler("There cannot be a whitespace in a function body");} | (<DEF> | <MAIN> | <FUNCTION_END> | <NAME> | <LBRACE> | <SEMICOLON> | <EOL> | <ADDITION> | <MULTIPLICATION> | <BRACKET>){throw new ErrorHandler("Illegal Arithmetic expression");} | <RBRACE>{throw new ErrorHandler("Function must be non-empty.");}) 
+  {body=Construct(t,temp,body);}
+  {temp = "";}
+  (
+    (t=<ADDITION> | t=<MULTIPLICATION> | (<SPACE> (<DEF> | <MAIN> | <FUNCTION_BEGINNING> | <FUNCTION_END> | <NAME> | <PARAMETER> | <LBRACE> | <SEMICOLON> | <SPACE> | <EOL> | <ADDITION> | <MULTIPLICATION> | <NUMBER> | <BRACKET>)){throw new ErrorHandler("There cannot be a whitespace unless it has a right brace after it in a function body");} | (<DEF> | <MAIN> | <FUNCTION_BEGINNING> | <FUNCTION_END> | <NAME> | <LBRACE> | <RBRACE> | <SEMICOLON> | <EOL> | <PARAMETER> | <BRACKET>){throw new ErrorHandler("Illegal Arithmetic expression");} ) 
+    {body += t.image;}
+    (t=<NUMBER> | temp=Helper(param) | t=checkParam(param) | <SPACE>{throw new ErrorHandler("There cannot be a whitespace in a function body");} | (<DEF> | <MAIN> | <FUNCTION_END> | <NAME> | <LBRACE> | <RBRACE> | <SEMICOLON> | <EOL> | <ADDITION> | <MULTIPLICATION> | <BRACKET>){throw new ErrorHandler("Illegal Arithmetic expression");})
+    {body=Construct(t,temp,body);}
+    {temp = "";}
+  )*
+  {
+    ArrayList<String> helperArray = new ArrayList<String>();
+    helperArray.add(param);
+    helperArray.add(body);
+    functions.put(name,helperArray);
+  }
+}
+
+/**
+ * Helper function which parses function calls inside function bodies, in their definitions
+ * @param param the parameter string of the function currently being defined 
+ */
+String Helper(String param) throws NumberFormatException, ErrorHandler :
+{
+  Token t = null;
+  String body = "";
+  String temp = "";
+}
+{
+  t=<FUNCTION_BEGINNING> 
+  {
+    body += t.image;
+    calledFuncs.put(t.image.substring(0,t.image.length() - 1), lineNumber);
+  }
+
+  (t=<NUMBER> | temp=Helper(param) | t=checkParam(param) | <SPACE>{throw new ErrorHandler("There cannot be a whitespace in a function body");} | (<DEF> | <MAIN>  | <NAME> | <LBRACE> | <RBRACE> | <SEMICOLON> | <EOL> | <ADDITION> | <MULTIPLICATION> | <BRACKET>){throw new ErrorHandler("Illegal Arithmetic expression");} | <FUNCTION_END>{throw new ErrorHandler("Function calls cannot be empty.");})
+  {body=Construct(t,temp,body);}
+  {temp = "";}
+  (
+    (t=<ADDITION> | t=<MULTIPLICATION> | (<SPACE> (<DEF> | <MAIN> | <FUNCTION_BEGINNING> | <FUNCTION_END> | <NAME> | <PARAMETER> | <LBRACE> | <SEMICOLON> | <SPACE> | <EOL> | <ADDITION> | <MULTIPLICATION> | <NUMBER> | <BRACKET>)){throw new ErrorHandler("There cannot be a whitespace in a function body");} | (<DEF> | <MAIN> | <FUNCTION_BEGINNING> | <NAME> | <LBRACE> | <RBRACE> | <SEMICOLON> | <EOL> | <PARAMETER> | <BRACKET>){throw new ErrorHandler("Illegal Arithmetic expression");} ) 
+    {body += t.image;}
+    (t=<NUMBER> | temp=Helper(param) | t=checkParam(param) | <SPACE>{throw new ErrorHandler("There cannot be a whitespace in a function body");} | (<DEF> | <MAIN> | <FUNCTION_END> | <NAME> | <LBRACE> | <RBRACE> | <SEMICOLON> | <EOL> | <ADDITION> | <MULTIPLICATION> | <BRACKET>){throw new ErrorHandler("Illegal Arithmetic expression");})
+    {body=Construct(t,temp,body);}
+    {temp = "";}
+  )* 
+  (t=<FUNCTION_END> | (<DEF> | <MAIN> | <FUNCTION_BEGINNING> | <NAME> | <PARAMETER> | <LBRACE> | <RBRACE> | <SEMICOLON> | <SPACE> | <EOL> | <ADDITION> | <MULTIPLICATION> | <NUMBER> | <BRACKET>){throw new ErrorHandler("Missing closing paranthesis.");})
+  {body += t.image;}
+  {return body;}
+}
+
+/**
+ * Function to ensure all lower case letter strings inside the function body match their parameter string in their definition
+ * @param param the parameter string of the function currently being defined 
+ * @return The parameter token just read.
+ */
+Token checkParam(String param) throws ErrorHandler:
+{
+  Token t;
+}
+{
+  t=<PARAMETER>
+  {if (t.image.equals(param)){
+    return t;
+  }else{
+    throw new ErrorHandler("Parameter in function body does not match the parameter defined in the function.");
+  }}
+}
+
