@@ -43,7 +43,7 @@ of the function that is making the call, as well as calls to other functions.
 11. No function can be defined twice.
 12. No characters other than the specific ASCII characters referenced so far, are allowed.
 
-To run:
+To run: 
 javacc Parser.jj
 javac *.java
 For reading an input file called test.txt, the command
